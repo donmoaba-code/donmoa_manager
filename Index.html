@@ -1,0 +1,619 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DONMOA SMART v2.1 - 파일 기록 및 정밀 관리 시스템</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Pretendard:wght@400;600;800&display=swap');
+        body { font-family: 'Pretendard', sans-serif; background-color: #f1f5f9; color: #334155; }
+        
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #f1f5f9; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+        .status-판매중 { background-color: #f0fdf4; color: #15803d; border: 1px solid #86efac; }
+        .status-품절, .status-SOLDOUT { background-color: #fef2f2; color: #b91c1c; border: 1px solid #fca5a5; }
+        .status-인기 { background-color: #fff7ed; color: #c2410c; border: 1px solid #fdba74; }
+
+        #magicPaste {
+            min-height: 140px;
+            max-height: 180px;
+            overflow-y: auto;
+            border: 2px dashed #cbd5e1;
+            border-radius: 1.25rem;
+            padding: 1.25rem;
+            background-color: #ffffff;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        #magicPaste:focus { border-color: #3b82f6; background-color: #f8fafc; outline: none; box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.1); }
+        
+        .modal-bg { background-color: rgba(15, 23, 42, 0.8); backdrop-filter: blur(8px); }
+        .item-card { transition: transform 0.2s, box-shadow 0.2s; border: 1px solid #e2e8f0; border-radius: 1.5rem; background: white; overflow: hidden; }
+        .item-card:hover { transform: translateY(-4px); box-shadow: 0 12px 25px -5px rgba(0, 0, 0, 0.1); border-color: #3b82f6; }
+        
+        .filter-btn { transition: all 0.2s; border: 1px solid #e2e8f0; }
+        .filter-btn.active { background-color: #3b82f6; color: white; border-color: #3b82f6; font-weight: 800; }
+
+        .page-btn { transition: all 0.2s; }
+        .page-btn.active { background-color: #3b82f6; color: white; border-color: #3b82f6; }
+
+        .editable-field:hover { background-color: #f8fafc; border-radius: 4px; cursor: pointer; text-decoration: underline; }
+        
+        .history-tag { display: inline-flex; align-items: center; gap: 6px; padding: 4px 12px; background: white; border: 1px solid #e2e8f0; border-radius: 8px; font-size: 11px; font-weight: 600; color: #64748b; }
+    </style>
+</head>
+<body class="min-h-screen pb-20">
+
+    <!-- 로딩 오버레이 -->
+    <div id="progressOverlay" class="hidden fixed inset-0 z-[200] flex flex-col items-center justify-center bg-white/95 backdrop-blur-md">
+        <div class="w-16 h-16 border-4 border-blue-100 border-t-blue-600 rounded-full animate-spin mb-4"></div>
+        <h3 id="progressTitle" class="text-xl font-black text-slate-800">처리 중...</h3>
+        <p id="progressDetail" class="text-slate-500 mt-2 font-medium text-center"></p>
+    </div>
+
+    <!-- 헤더 -->
+    <header class="bg-white/80 backdrop-blur-md border-b sticky top-0 z-50">
+        <div class="max-w-[1800px] mx-auto px-6 h-20 flex items-center justify-between">
+            <div class="flex items-center gap-6">
+                <h1 class="text-2xl font-black text-slate-900 flex items-center gap-3">
+                    <i class="fas fa-wallet text-blue-600"></i> DONMOA <span class="text-blue-600">SMART</span> v2.1
+                </h1>
+                <div class="h-8 w-px bg-slate-200"></div>
+                <div class="flex items-center gap-3 px-4 py-2 bg-slate-100 rounded-2xl">
+                    <span class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Global Data</span>
+                    <span id="totalGlobalCount" class="text-lg font-black text-blue-600">0</span>
+                </div>
+            </div>
+            
+            <div class="flex items-center gap-3">
+                <input type="file" id="importInput" multiple accept=".json" class="hidden" onchange="importBackups(event)">
+                <button onclick="document.getElementById('importInput').click()" class="bg-indigo-50 text-indigo-600 px-6 py-2.5 rounded-2xl text-sm font-black hover:bg-indigo-100 transition-all flex items-center gap-2">
+                    <i class="fas fa-file-import"></i> JSON 불러오기
+                </button>
+                <button onclick="exportData()" class="bg-blue-50 text-blue-600 px-6 py-2.5 rounded-2xl text-sm font-black hover:bg-blue-100 transition-all border border-blue-100">
+                    <i class="fas fa-download"></i> 백업
+                </button>
+                <button onclick="askClearAll()" class="bg-red-50 text-red-600 px-6 py-2.5 rounded-2xl text-sm font-black hover:bg-red-100">
+                    <i class="fas fa-trash-alt"></i> 초기화
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- 파일 처리 기록 영역 -->
+    <div class="max-w-[1800px] mx-auto px-6 mt-4">
+        <div class="bg-white/50 border border-slate-200 rounded-2xl p-4 flex items-center gap-4 overflow-hidden">
+            <span class="text-xs font-black text-slate-400 uppercase whitespace-nowrap"><i class="fas fa-history mr-1"></i> 파일 처리 기록:</span>
+            <div id="fileHistoryList" class="flex gap-2 overflow-x-auto no-scrollbar pb-1">
+                <span class="text-xs text-slate-300 italic">기록이 없습니다.</span>
+            </div>
+        </div>
+    </div>
+
+    <main class="max-w-[1800px] mx-auto px-6 mt-6">
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 mb-12">
+            <!-- 입력창 -->
+            <div class="lg:col-span-5 bg-white p-6 rounded-[2.5rem] shadow-sm border border-slate-200">
+                <div class="flex items-center justify-between mb-4 px-2">
+                    <h2 class="font-black text-slate-800 flex items-center gap-2">
+                        <i class="fas fa-bolt text-amber-400"></i> 스마트 붙여넣기
+                    </h2>
+                </div>
+                <div id="magicPaste" contenteditable="true" data-placeholder="목록을 여기에 붙여넣으세요."></div>
+            </div>
+
+            <!-- 정렬 및 검색 및 상태 필터 -->
+            <div class="lg:col-span-7 bg-white p-6 rounded-[2.5rem] shadow-sm border border-slate-200 flex flex-col justify-between">
+                <div class="flex flex-wrap items-center justify-between mb-6 px-2 gap-4">
+                    <div class="flex items-center gap-2 bg-slate-100 p-1.5 rounded-2xl">
+                        <button onclick="setStatusFilter('전체')" id="btnFilterAll" class="filter-btn active px-5 py-2 text-xs rounded-xl">전체보기</button>
+                        <button onclick="setStatusFilter('판매중')" id="btnFilterSale" class="filter-btn px-5 py-2 text-xs rounded-xl bg-white">판매중만</button>
+                        <button onclick="setStatusFilter('품절')" id="btnFilterSold" class="filter-btn px-5 py-2 text-xs rounded-xl bg-white">품절만</button>
+                    </div>
+                    
+                    <div class="flex items-center gap-3">
+                        <span class="text-xs font-bold text-slate-400">정렬:</span>
+                        <select id="sortOrder" onchange="updateSearch()" class="text-xs font-bold text-blue-600 bg-blue-50 px-4 py-2 rounded-xl border-none outline-none cursor-pointer">
+                            <option value="newest">입력 최신순</option>
+                            <option value="oldest">입력 과거순</option>
+                            <option value="price_low">낮은가격순</option>
+                            <option value="price_high">높은가격순</option>
+                            <option value="title_asc">제목순 (ㄱ-ㅎ)</option>
+                            <option value="title_desc">제목순 (ㅎ-ㄱ)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="relative mb-6">
+                    <i class="fas fa-search absolute left-5 top-1/2 -translate-y-1/2 text-slate-300"></i>
+                    <input type="text" id="searchInput" onkeyup="if(event.key==='Enter') updateSearch()" placeholder="제목 또는 가격 검색..." class="w-full pl-14 pr-14 py-4 bg-slate-50 rounded-2xl border border-slate-100 focus:border-blue-400 outline-none font-medium">
+                </div>
+
+                <div class="flex items-center justify-between px-2">
+                    <div class="flex items-center gap-4">
+                        <span class="text-xs font-bold text-slate-400 uppercase tracking-tighter">Rows Per Page</span>
+                        <select id="rowsPerPage" onchange="updateRowsPerPage()" class="text-xs font-black text-slate-700 bg-slate-100 px-4 py-2 rounded-xl border-none outline-none">
+                            <option value="10">10행</option>
+                            <option value="20" selected>20행</option>
+                            <option value="50">50행</option>
+                            <option value="100">100행</option>
+                            <option value="200">200행</option>
+                            <option value="300">300행</option>
+                            <option value="500">500행</option>
+                        </select>
+                    </div>
+                    <span class="text-[10px] font-black text-slate-300 uppercase italic">v2.1 History Managed Edition</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="flex items-center justify-between mb-8 px-4">
+            <h3 class="text-3xl font-black text-slate-900">
+                조회된 상품 <span id="filteredCountDisplay" class="text-blue-600">0</span>
+                <span class="text-sm text-slate-400 font-medium ml-3">/ 전체 <span id="totalDashCountDisplay">0</span></span>
+            </h3>
+        </div>
+
+        <div id="grid" class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-6"></div>
+        <div id="empty" class="hidden flex flex-col items-center justify-center py-48 text-slate-300">
+            <i class="fas fa-box-open text-5xl opacity-20 mb-6"></i>
+            <p class="text-xl font-black text-slate-400">표시할 데이터가 없습니다.</p>
+        </div>
+
+        <!-- 하단 페이지네이션 -->
+        <div class="mt-16 flex flex-col md:flex-row items-center justify-center gap-8">
+            <div class="flex items-center gap-2" id="pagination"></div>
+            <div class="flex items-center gap-4 bg-white px-6 py-3 rounded-3xl shadow-sm border border-slate-100">
+                <span class="text-xs font-bold text-slate-400">페이지 점프</span>
+                <input type="number" id="pageJumpInput" min="1" class="w-16 text-center text-sm font-black text-blue-600 bg-slate-50 rounded-xl py-1.5 outline-none border border-slate-200">
+                <button onclick="jumpToPage()" class="bg-slate-900 text-white px-6 py-2 rounded-xl text-xs font-black">이동</button>
+            </div>
+        </div>
+    </main>
+
+    <!-- 편집 모달 -->
+    <div id="editModal" class="hidden fixed inset-0 z-[160] flex items-center justify-center p-4 modal-bg">
+        <div class="bg-white rounded-[2.5rem] shadow-2xl max-w-lg w-full p-10">
+            <h4 class="text-xl font-black text-slate-800 mb-6 flex items-center gap-2"><i class="fas fa-edit text-blue-500"></i> 상품 정보 수정</h4>
+            <div class="space-y-4">
+                <div>
+                    <label class="text-[10px] font-bold text-slate-400 uppercase ml-2 mb-1 block">상품 제목</label>
+                    <input type="text" id="editTitle" class="w-full px-5 py-4 bg-slate-50 border rounded-2xl outline-none focus:border-blue-400 font-bold">
+                </div>
+                <div>
+                    <label class="text-[10px] font-bold text-slate-400 uppercase ml-2 mb-1 block">상품 금액</label>
+                    <input type="text" id="editPrice" class="w-full px-5 py-4 bg-slate-50 border rounded-2xl outline-none focus:border-blue-400 font-bold">
+                </div>
+                <div>
+                    <label class="text-[10px] font-bold text-slate-400 uppercase ml-2 mb-1 block">상품 상태</label>
+                    <select id="editStatus" class="w-full px-5 py-4 bg-slate-50 border rounded-2xl outline-none focus:border-blue-400 font-bold">
+                        <option value="판매중">판매중</option>
+                        <option value="품절">품절</option>
+                        <option value="인기">인기</option>
+                    </select>
+                </div>
+            </div>
+            <div class="flex gap-4 mt-10">
+                <button onclick="closeEditModal()" class="flex-1 py-4 bg-slate-100 text-slate-600 font-black rounded-2xl">취소</button>
+                <button id="saveEditBtn" class="flex-1 py-4 bg-blue-600 text-white font-black rounded-2xl shadow-lg">저장하기</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 붙여넣기 확인 모달 -->
+    <div id="pastePreviewModal" class="hidden fixed inset-0 z-[150] flex items-center justify-center p-4 modal-bg">
+        <div class="bg-white rounded-[2.5rem] shadow-2xl w-full max-w-5xl max-h-[90vh] flex flex-col overflow-hidden">
+            <div class="p-8 border-b flex items-center justify-between bg-slate-50/50">
+                <div class="flex items-center gap-4">
+                    <div class="w-12 h-12 bg-blue-600 text-white rounded-2xl flex items-center justify-center shadow-lg"><i class="fas fa-file-import"></i></div>
+                    <div>
+                        <h4 class="text-xl font-black">붙여넣기 확인</h4>
+                        <p class="text-sm text-slate-500 font-medium">분석 후 전수 저장합니다.</p>
+                    </div>
+                </div>
+                <div class="flex gap-3">
+                    <button onclick="cancelPaste()" class="px-6 py-3 bg-slate-200 text-slate-600 font-bold rounded-2xl">취소</button>
+                    <button onclick="startParsing()" class="px-10 py-3 bg-blue-600 text-white font-black rounded-2xl hover:bg-blue-700">분석 저장</button>
+                </div>
+            </div>
+            <div id="rawPreviewContent" class="flex-grow overflow-auto p-8 bg-white text-xs whitespace-pre-wrap border-t border-b"></div>
+        </div>
+    </div>
+
+    <div id="confirmModal" class="hidden fixed inset-0 z-[110] flex items-center justify-center p-4 modal-bg">
+        <div class="bg-white rounded-[2.5rem] shadow-2xl max-w-md w-full p-10 text-center">
+            <div id="modalIcon" class="w-20 h-20 bg-blue-50 text-blue-500 rounded-full flex items-center justify-center mx-auto mb-6 text-3xl"><i class="fas fa-info-circle"></i></div>
+            <h4 id="modalTitle" class="text-2xl font-black text-slate-900 mb-3">알림</h4>
+            <div id="modalDesc" class="text-slate-500 mb-10 font-medium leading-relaxed"></div>
+            <div class="flex gap-4">
+                <button onclick="closeModal()" class="flex-1 py-4 bg-slate-100 text-slate-600 font-black rounded-2xl">취소</button>
+                <button id="confirmBtn" class="flex-1 py-4 bg-blue-600 text-white font-black rounded-2xl shadow-lg">확인</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="toast" class="fixed bottom-10 left-1/2 -translate-x-1/2 bg-slate-900 text-white px-10 py-4 rounded-2xl shadow-2xl opacity-0 transition-all duration-500 pointer-events-none z-[250] font-black">알림</div>
+
+    <script>
+        /** DB 설정 **/
+        const DB_NAME = 'DonmoaSmartDB_v2.1_Log';
+        const STORE_ITEMS = 'items';
+        const STORE_LOGS = 'logs'; // 파일 기록용 스토어 추가
+        let db;
+
+        const initDB = () => {
+            return new Promise((resolve) => {
+                const request = indexedDB.open(DB_NAME, 2); // 버전 업
+                request.onupgradeneeded = (e) => {
+                    const db = e.target.result;
+                    if (!db.objectStoreNames.contains(STORE_ITEMS)) {
+                        db.createObjectStore(STORE_ITEMS, { keyPath: 'id' });
+                    }
+                    if (!db.objectStoreNames.contains(STORE_LOGS)) {
+                        db.createObjectStore(STORE_LOGS, { keyPath: 'id', autoIncrement: true });
+                    }
+                };
+                request.onsuccess = (e) => { db = e.target.result; resolve(db); };
+            });
+        };
+
+        const getAllFromDB = (storeName) => {
+            return new Promise((resolve) => {
+                const transaction = db.transaction([storeName], 'readonly');
+                const store = transaction.objectStore(storeName);
+                const request = store.getAll();
+                request.onsuccess = () => resolve(request.result);
+            });
+        };
+
+        const saveToDB = (storeName, dataArray) => {
+            return new Promise((resolve) => {
+                const transaction = db.transaction([storeName], 'readwrite');
+                const store = transaction.objectStore(storeName);
+                dataArray.forEach(item => store.put(item));
+                transaction.oncomplete = () => resolve();
+            });
+        };
+
+        const clearStore = (storeName) => {
+            return new Promise((resolve) => {
+                const transaction = db.transaction([storeName], 'readwrite');
+                const store = transaction.objectStore(storeName);
+                store.clear();
+                transaction.oncomplete = () => resolve();
+            });
+        };
+
+        let items = [];
+        let filteredItems = [];
+        let fileLogs = [];
+        let currentPage = 1;
+        let rowsPerPage = 20;
+        let currentStatusFilter = '전체';
+        const itemsPerRow = 6;
+
+        function showToast(msg) {
+            const toast = document.getElementById('toast');
+            toast.textContent = msg;
+            toast.classList.replace('opacity-0', 'opacity-100');
+            setTimeout(() => toast.classList.replace('opacity-100', 'opacity-0'), 2500);
+        }
+
+        /** 파일 기록 표시 **/
+        function renderFileHistory() {
+            const container = document.getElementById('fileHistoryList');
+            if (fileLogs.length === 0) {
+                container.innerHTML = '<span class="text-xs text-slate-300 italic">기록이 없습니다.</span>';
+                return;
+            }
+            container.innerHTML = fileLogs.map(log => `
+                <div class="history-tag">
+                    <i class="fas ${log.type === 'import' ? 'fa-file-import text-indigo-400' : 'fa-download text-blue-400'}"></i>
+                    <span>${log.name}</span>
+                </div>
+            `).join('');
+            container.scrollLeft = container.scrollWidth; // 최신 기록 쪽으로 스크롤
+        }
+
+        /** 불러오기 기능 (파일명 기록 추가) **/
+        async function importBackups(event) {
+            const files = event.target.files;
+            if (!files || files.length === 0) return;
+
+            const overlay = document.getElementById('progressOverlay');
+            overlay.classList.remove('hidden');
+            document.getElementById('progressTitle').textContent = "파일 처리 중...";
+
+            const importedItems = [];
+            const newLogs = [];
+            const baseTimestamp = Date.now();
+
+            for (let i = 0; i < files.length; i++) {
+                const file = files[i];
+                newLogs.push({ type: 'import', name: file.name, time: baseTimestamp });
+                try {
+                    const content = await file.text();
+                    const data = JSON.parse(content);
+                    if (Array.isArray(data)) {
+                        data.forEach((item, idx) => {
+                            const uniqueId = `imported_${baseTimestamp}_${i}_${idx}_${Math.random().toString(36).substr(2, 5)}`;
+                            importedItems.push({
+                                ...item,
+                                id: uniqueId,
+                                timestamp: baseTimestamp + (importedItems.length * 0.0001)
+                            });
+                        });
+                    }
+                } catch (e) { console.error("Error", file.name, e); }
+            }
+
+            if (importedItems.length > 0) {
+                await saveToDB(STORE_ITEMS, importedItems);
+                await saveToDB(STORE_LOGS, newLogs);
+                await loadAndRender();
+                showToast(`${importedItems.length}개 항목을 불러왔습니다.`);
+            }
+            overlay.classList.add('hidden');
+            event.target.value = '';
+        }
+
+        /** 백업 기능 (파일명 기록 추가) **/
+        async function exportData() {
+            const dateStr = new Date().toISOString().slice(0,10).replace(/-/g,'');
+            const fileName = `donmoa_v2.1_backup_${dateStr}.json`;
+            
+            const blob = new Blob([JSON.stringify(items, null, 2)], {type: 'application/json'});
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = fileName;
+            a.click();
+
+            // 백업 기록 저장
+            const newLog = [{ type: 'export', name: fileName, time: Date.now() }];
+            await saveToDB(STORE_LOGS, newLog);
+            await loadAndRender();
+            showToast('백업이 완료되었습니다.');
+        }
+
+        /** 분석 엔진 v2.1 **/
+        async function startParsing() {
+            const overlay = document.getElementById('progressOverlay');
+            overlay.classList.remove('hidden');
+            document.getElementById('progressTitle').textContent = "데이터 전수 분석 중...";
+            
+            const tempDiv = document.createElement('div');
+            tempDiv.innerHTML = previewContent.innerHTML;
+            let rawBlocks = Array.from(tempDiv.querySelectorAll('li, tr, .goods_list_item, div[style*=\"float\"]'));
+            
+            if (rawBlocks.length < 5) {
+                const lines = tempDiv.innerText.replace(/\u00A0/g, ' ').split('\n').map(l => l.trim()).filter(l => l.length > 0);
+                const grouped = []; let currentLines = [];
+                lines.forEach(line => {
+                    currentLines.push(line);
+                    if (/[0-9,]+\s?원$/.test(line) || /^\s*0\s*원?$/.test(line) || line === '품절' || line === 'SOLD OUT') {
+                        grouped.push({ text: currentLines.join('\n'), html: '' });
+                        currentLines = [];
+                    }
+                });
+                if (currentLines.length > 0) grouped.push({ text: currentLines.join('\n'), html: '' });
+                rawBlocks = grouped;
+            } else { rawBlocks = rawBlocks.map(b => ({ text: b.innerText, html: b.innerHTML })); }
+
+            const finalParsedItems = [];
+            const baseTimestamp = Date.now();
+
+            for (let i = 0; i < rawBlocks.length; i++) {
+                const block = rawBlocks[i];
+                let foundImg = null;
+                if (block.html) {
+                    const bDiv = document.createElement('div'); bDiv.innerHTML = block.html;
+                    const imgs = Array.from(bDiv.querySelectorAll('img'));
+                    for (const img of imgs) {
+                        let src = img.getAttribute('src') || "";
+                        if (src.length > 10 && !src.includes('badge')) {
+                            if (src.startsWith('/')) src = 'https://www.sujipbank.com' + src;
+                            foundImg = src; break;
+                        }
+                    }
+                }
+                const info = extractInfoV21(block.text);
+                if (info.title === "제목 없음" && !foundImg) continue;
+                const uniqueId = `paste_${baseTimestamp}_${i}_${Math.random().toString(36).substr(2, 9)}`;
+                finalParsedItems.push({ 
+                    id: uniqueId, timestamp: baseTimestamp - i,
+                    title: info.title, price: info.price, status: info.isSoldOut ? '품절' : '판매중', 
+                    image: foundImg || 'https://via.placeholder.com/400x400?text=No+Image',
+                    priceVal: parseInt(info.price.replace(/[^0-9]/g, '')) || 0
+                });
+            }
+            if (finalParsedItems.length > 0) { await saveToDB(STORE_ITEMS, finalParsedItems); await loadAndRender(); }
+            overlay.classList.add('hidden');
+            cancelPaste();
+        }
+
+        function extractInfoV21(text) {
+            const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+            let isSoldOut = false, price = "0원", titleParts = [];
+            if (text.toUpperCase().includes('SOLD OUT') || text.includes('품절')) isSoldOut = true;
+            lines.forEach(line => {
+                const priceMatch = line.match(/^(.*?)([0-9,]+\s?원|0)\s*$/);
+                if (priceMatch) {
+                    if (priceMatch[1].trim()) titleParts.push(cleanV21(priceMatch[1].trim()));
+                    price = (priceMatch[2].trim() === '0') ? "0원" : priceMatch[2].trim();
+                    if (price === "0원") isSoldOut = true;
+                } else {
+                    const cleaned = cleanV21(line);
+                    if (cleaned) titleParts.push(cleaned);
+                }
+            });
+            function cleanV21(str) { return str.replace(/사진\+/gi, '').replace(/SOLD OUT/gi, '').replace(/품절/gi, '').replace(/인기/gi, '').replace(/BEST/gi, '').replace(/\s+/g, ' ').trim(); }
+            let title = titleParts.filter(p => p.length > 0).join(' ').trim();
+            if (!title && lines.length > 0) title = lines[0].replace(/[0-9,]+\s?원|0$/g, '').replace(/SOLD OUT|품절/gi, '').trim() || "제목 없음";
+            return { title, price, isSoldOut };
+        }
+
+        /** 상태 필터 설정 **/
+        function setStatusFilter(filter) {
+            currentStatusFilter = filter;
+            const buttons = { '전체': 'btnFilterAll', '판매중': 'btnFilterSale', '품절': 'btnFilterSold' };
+            Object.values(buttons).forEach(id => {
+                document.getElementById(id).classList.remove('active', 'bg-blue-600', 'text-white');
+                document.getElementById(id).classList.add('bg-white', 'text-slate-600');
+            });
+            document.getElementById(buttons[filter]).classList.add('active', 'bg-blue-600', 'text-white');
+            updateSearch();
+        }
+
+        /** 검색 및 정렬 **/
+        function updateSearch() {
+            const query = document.getElementById('searchInput').value.trim().toLowerCase();
+            const sort = document.getElementById('sortOrder').value;
+            currentPage = 1;
+            let result = [...items];
+            
+            if (currentStatusFilter === '판매중') {
+                result = result.filter(item => item.status === '판매중' || item.status === '인기');
+            } else if (currentStatusFilter === '품절') {
+                result = result.filter(item => item.status === '품절');
+            }
+
+            if (query) {
+                result = result.filter(item => (item.title + item.price).toLowerCase().includes(query));
+            }
+
+            switch(sort) {
+                case 'newest': result.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0)); break;
+                case 'oldest': result.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0)); break;
+                case 'price_low': result.sort((a, b) => a.priceVal - b.priceVal || (b.timestamp - a.timestamp)); break;
+                case 'price_high': result.sort((a, b) => b.priceVal - a.priceVal || (b.timestamp - a.timestamp)); break;
+                case 'title_asc': result.sort((a, b) => a.title.localeCompare(b.title)); break;
+                case 'title_desc': result.sort((a, b) => b.title.localeCompare(a.title)); break;
+            }
+            filteredItems = result;
+            renderGrid();
+        }
+
+        async function loadAndRender() {
+            items = await getAllFromDB(STORE_ITEMS);
+            fileLogs = await getAllFromDB(STORE_LOGS);
+            document.getElementById('totalGlobalCount').textContent = items.length.toLocaleString();
+            document.getElementById('totalDashCountDisplay').textContent = items.length.toLocaleString();
+            renderFileHistory(); // 기록 렌더링
+            updateSearch();
+        }
+
+        /** 편집 기능 **/
+        let currentEditingId = null;
+        function openEditModal(id) {
+            const item = items.find(it => it.id === id);
+            if (!item) return;
+            currentEditingId = id;
+            document.getElementById('editTitle').value = item.title;
+            document.getElementById('editPrice').value = item.price;
+            document.getElementById('editStatus').value = item.status === '인기' ? '인기' : (item.status === '품절' ? '품절' : '판매중');
+            document.getElementById('editModal').classList.remove('hidden');
+        }
+
+        function closeEditModal() { document.getElementById('editModal').classList.add('hidden'); currentEditingId = null; }
+
+        document.getElementById('saveEditBtn').onclick = async () => {
+            if (!currentEditingId) return;
+            const newTitle = document.getElementById('editTitle').value.trim();
+            const newPrice = document.getElementById('editPrice').value.trim();
+            const newStatus = document.getElementById('editStatus').value;
+            const idx = items.findIndex(it => it.id === currentEditingId);
+            if (idx !== -1) {
+                items[idx].title = newTitle; items[idx].price = newPrice; items[idx].status = newStatus;
+                items[idx].priceVal = parseInt(newPrice.replace(/[^0-9]/g, '')) || 0;
+                await saveToDB(STORE_ITEMS, [items[idx]]);
+                await loadAndRender();
+                showToast('수정되었습니다.');
+                closeEditModal();
+            }
+        };
+
+        function renderGrid() {
+            const grid = document.getElementById('grid');
+            const empty = document.getElementById('empty');
+            const itemsPerPage = rowsPerPage * itemsPerRow;
+            document.getElementById('filteredCountDisplay').textContent = filteredItems.length.toLocaleString();
+            if (filteredItems.length === 0) { grid.innerHTML = ''; empty.classList.remove('hidden'); document.getElementById('pagination').innerHTML = ''; return; }
+            empty.classList.add('hidden');
+            const start = (currentPage - 1) * itemsPerPage;
+            const paged = filteredItems.slice(start, start + itemsPerPage);
+            grid.innerHTML = paged.map(item => `
+                <div class="item-card bg-white flex flex-col relative group">
+                    <div class="aspect-square bg-slate-50 relative overflow-hidden flex items-center justify-center p-2">
+                        <img src="${item.image}" loading="lazy" onerror="this.src='https://via.placeholder.com/400x400?text=No+Image'" class="max-w-full max-h-full object-contain transition-transform group-hover:scale-105">
+                        <span class="absolute top-3 left-3 px-2 py-1 rounded-xl text-[9px] font-black uppercase shadow-sm border backdrop-blur-md ${statusClass(item.status)}">${item.status}</span>
+                        <div class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-3">
+                            <button onclick="openEditModal('${item.id}')" class="w-10 h-10 bg-white text-blue-600 rounded-full flex items-center justify-center shadow-lg"><i class="fas fa-edit"></i></button>
+                        </div>
+                    </div>
+                    <div class="p-4 flex flex-col flex-grow">
+                        <h3 class="font-bold text-slate-800 line-clamp-2 mb-2 h-9 text-[11px] leading-tight editable-field" onclick="openEditModal('${item.id}')">${item.title}</h3>
+                        <div class="mt-auto flex items-center justify-between">
+                            <span class="text-sm font-black editable-field ${item.status === '품절' ? 'text-red-500' : 'text-blue-600'}" onclick="openEditModal('${item.id}')">${item.price}</span>
+                            <button onclick="deleteSingle('${item.id}')" class="text-slate-300 hover:text-red-500 p-1 opacity-0 group-hover:opacity-100 transition-opacity"><i class="fas fa-trash-alt text-xs"></i></button>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+            renderPagination();
+        }
+
+        function renderPagination() {
+            const container = document.getElementById('pagination');
+            const totalPages = Math.ceil(filteredItems.length / (rowsPerPage * itemsPerRow));
+            if (totalPages <= 1) { container.innerHTML = ''; return; }
+            let html = `<button onclick="goToPage(1)" class="page-btn w-10 h-10 rounded-xl border bg-white"><i class="fas fa-angle-double-left"></i></button>`;
+            const start = Math.max(1, currentPage - 2);
+            const end = Math.min(totalPages, start + 4);
+            for (let i = (end === totalPages ? Math.max(1, end - 4) : start); i <= end; i++) {
+                html += `<button onclick="goToPage(${i})" class="page-btn w-10 h-10 rounded-xl border font-black text-xs ${i === currentPage ? 'active' : 'bg-white'}">${i}</button>`;
+            }
+            html += `<button onclick="goToPage(${totalPages})" class="page-btn w-10 h-10 rounded-xl border bg-white"><i class="fas fa-angle-double-right"></i></button>`;
+            container.innerHTML = html;
+        }
+
+        function goToPage(p) { currentPage = p; renderGrid(); window.scrollTo({ top: 0, behavior: 'smooth' }); }
+        function jumpToPage() { const p = parseInt(document.getElementById('pageJumpInput').value); if (p >= 1) goToPage(p); }
+        function statusClass(s) { return s === '품절' ? 'status-품절' : 'status-판매중'; }
+        function updateRowsPerPage() { rowsPerPage = parseInt(document.getElementById('rowsPerPage').value); currentPage = 1; renderGrid(); }
+
+        /** 초기화 기능 (기록까지 삭제) **/
+        async function askClearAll() {
+            const modal = document.getElementById('confirmModal');
+            document.getElementById('modalTitle').textContent = "전체 데이터 초기화";
+            document.getElementById('modalDesc').textContent = "저장된 상품 정보와 파일 처리 기록이 모두 삭제됩니다. 계속하시겠습니까?";
+            document.getElementById('confirmBtn').onclick = async () => {
+                await clearStore(STORE_ITEMS);
+                await clearStore(STORE_LOGS);
+                items = []; fileLogs = [];
+                await loadAndRender();
+                showToast('데이터와 기록이 모두 초기화되었습니다.');
+                closeModal();
+            };
+            modal.classList.remove('hidden');
+        }
+
+        async function deleteSingle(id) {
+            const modal = document.getElementById('confirmModal');
+            document.getElementById('modalTitle').textContent = "상품 삭제";
+            document.getElementById('modalDesc').textContent = "선택한 상품을 삭제하시겠습니까?";
+            document.getElementById('confirmBtn').onclick = async () => {
+                await removeFromDB(id); await loadAndRender(); showToast('삭제 완료'); closeModal();
+            };
+            modal.classList.remove('hidden');
+        }
+        function closeModal() { document.getElementById('confirmModal').classList.add('hidden'); }
+
+        window.onload = async () => { await initDB(); await loadAndRender(); };
+    </script>
+</body>
+</html>
